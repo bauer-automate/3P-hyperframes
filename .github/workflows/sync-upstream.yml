@@ -1,0 +1,43 @@
+# TEMPLATE OF RECORD — the live copies run on each bauer-automate/<fork>'s `ops`
+# branch; this in-repo copy exists so the workflow is auditable and recoverable
+# from claude-skills itself. When instantiating for a fork: adjust the two
+# occurrences of the upstream repo in the comment + `--source` flag, and the
+# `--branch` flag (list-formatting's default branch is `master`, not `main`).
+# Forks have GitHub Actions DISABLED by default — the owner must enable it in
+# the fork's Actions tab or workflow_dispatch will not work (dispatch returns 404).
+#
+# ON-DEMAND ONLY (ruled 2026-08-21, the retired decisions ledger). Ingestion runs ONLY when a
+# human dispatches it — there is deliberately no `schedule:` trigger. Two reasons:
+#   1. Upstream resync is a quality-gated step we want to eyeball before adopting,
+#      not a background job that advances mirrors unattended.
+#   2. Per-fork scheduled jobs across the fork fleet were the Actions tax we set
+#      out to cut. (Note: this sync cron was already inert here anyway — GitHub
+#      only fires `schedule:` from a repo's DEFAULT branch, and this workflow
+#      lives on the non-default `ops` branch. The daily cost the operator saw
+#      came from the UPSTREAM workflows inherited on each fork's pristine `main`
+#      — e.g. github-repo-stats runs daily and fails every time on the mirrors —
+#      which is handled separately by disabling them per fork, not here.)
+# Staleness is caught instead by the central monthly monitor
+# `.github/workflows/fork-health-monitor.yml` in claude-skills, which opens an
+# issue assigned to @ryley-bauer for any fork with no commits in over a month.
+# Do NOT re-add a `schedule:` block here — on-demand-only is the whole point.
+name: sync-upstream
+# Lives on the non-default `ops` branch on purpose: `main` stays a byte-pristine,
+# fast-forward-only mirror of heygen-com/hyperframes (fork SHAs == upstream
+# SHAs), which keeps every vendored pin resolvable against upstream history.
+# The weekly digest session triggers this via workflow_dispatch with ref=ops.
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fast-forward main from upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # gh repo sync uses the merge-upstream API: with a pristine main this is a
+        # fast-forward; on divergence it fails loudly instead of rewriting history.
+        # Never add --force — a loud failure here is the pristine-mirror guard.
+        run: gh repo sync ${{ github.repository }} --source heygen-com/hyperframes --branch main
